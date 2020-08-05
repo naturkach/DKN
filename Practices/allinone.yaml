@@ -1,0 +1,173 @@
+#configmap
+apiVersion: v1
+kind: ConfigMap
+data:
+  DBHOST: webappdb
+metadata:
+  name: webapp-configmap
+  namespace: student33
+---
+#secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: webapp-secret
+stringData:
+  DBUSER: NEWDBUSER
+  DBPASS: NEWDBPASS
+  DBNAME: NEWDBNAME
+---
+#ingress
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+  name: webapp
+spec:
+  rules:
+  - host: web.app
+    http:
+      paths:
+      - backend:
+          serviceName: webapp
+          servicePort: 80
+        path: /student33
+        #pathType: Perfix
+      - backend:
+          serviceName: webapp
+          servicePort: 80
+        path: /student33(/|$)(.*)
+---
+#dbpod
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+   app: db
+  namespace: student33
+  name: db
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+
+    spec:
+      containers:
+      - name: db
+        image: vovolkov/db
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: webapp-secret
+              key: DBUSER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: webapp-secret
+              key: DBPASS
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: webapp-secret
+              key: DBNAME
+        volumeMounts:
+          - mountPath: /var/lib/postgresql/data/
+            name: db-volume
+      volumes:
+      - name: db-volume
+        emptyDir: {}
+
+---
+#webapp pod
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+   app: webapp
+  name: webapp
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2        # how many pods we can add at a time
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      serviceAccountName: getpods
+      containers:
+      - name: webapp
+        image: vovolkov/webapp:fix
+        ports:
+        - containerPort: 80
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        envFrom:
+        - configMapRef:
+            name: webapp-configmap
+        - secretRef:
+            name: webapp-secret
+
+---
+#service_account
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: getpods
+
+---
+#role
+
+apiVersion: rbac.authorization.k8s.io/v1
+# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
+kind: Role
+metadata:
+  name: getpods
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  verbs: ["get", "list","watch"]
+
+---
+#RoleBinding
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+# kubernetes versions before 1.8.0 should use rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: getpods
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: getpods
+subjects:
+- kind: ServiceAccount
+  name: getpods
+  namespace: student33
