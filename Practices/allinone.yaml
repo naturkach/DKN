@@ -34,7 +34,20 @@ spec:
   type: NodePort
   ports:
      - port: 80
-       nodePort: 32033     
+       nodePort: 32033
+---
+#webapp db service
+apiVersion: v1
+kind: Service
+metadata:
+  name: webappdb
+  labels:
+    app: db
+spec:
+  selector:
+    app: db
+  ports:
+     - port: 5432
 ---
 #secret
 apiVersion: v1
