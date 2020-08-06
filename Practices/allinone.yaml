@@ -7,6 +7,35 @@ metadata:
   name: webapp-configmap
   namespace: student33
 ---
+#DB Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  selector:
+    app: db
+  ports:
+     - port: 5432
+---     
+#webapp service
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp
+  labels:
+    app: webapp
+spec:
+  selector:
+    app: webapp
+    rollout: webapp_old
+  type: NodePort
+  ports:
+     - port: 80
+       nodePort: 32033     
+---
 #secret
 apiVersion: v1
 kind: Secret
